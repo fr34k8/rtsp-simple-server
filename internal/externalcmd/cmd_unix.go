@@ -1,9 +1,10 @@
 //go:build !windows
-// +build !windows
 
 package externalcmd
 
 import (
+	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"syscall"
@@ -11,25 +12,24 @@ import (
 	"github.com/kballard/go-shellquote"
 )
 
-func (e *Cmd) runInner() (int, bool) {
-	cmdparts, err := shellquote.Split(e.cmdstr)
+func (e *Cmd) runOSSpecific(env []string) error {
+	cmdParts, err := shellquote.Split(e.cmdstr)
 	if err != nil {
-		return 0, true
+		return err
 	}
 
-	cmd := exec.Command(cmdparts[0], cmdparts[1:]...)
+	cmd := exec.Command(cmdParts[0], cmdParts[1:]...)
 
-	cmd.Env = append([]string(nil), os.Environ()...)
-	for key, val := range e.env {
-		cmd.Env = append(cmd.Env, key+"="+val)
-	}
-
+	cmd.Env = env
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
+	// set process group in order to allow killing subprocesses
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+
 	err = cmd.Start()
 	if err != nil {
-		return 0, true
+		return err
 	}
 
 	cmdDone := make(chan int)
@@ -39,21 +39,25 @@ func (e *Cmd) runInner() (int, bool) {
 			if err == nil {
 				return 0
 			}
-			ee, ok := err.(*exec.ExitError)
-			if !ok {
-				return 0
+			var ee *exec.ExitError
+			if errors.As(err, &ee) {
+				ee.ExitCode()
 			}
-			return ee.ExitCode()
+			return 0
 		}()
 	}()
 
 	select {
 	case <-e.terminate:
-		syscall.Kill(cmd.Process.Pid, syscall.SIGINT)
+		// the minus is needed to kill all subprocesses
+		syscall.Kill(-cmd.Process.Pid, syscall.SIGINT) //nolint:errcheck
 		<-cmdDone
-		return 0, false
+		return errTerminated
 
 	case c := <-cmdDone:
-		return c, true
+		if c != 0 {
+			return fmt.Errorf("command exited with code %d", c)
+		}
+		return nil
 	}
 }

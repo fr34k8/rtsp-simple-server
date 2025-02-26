@@ -1,5 +1,4 @@
 //go:build windows
-// +build windows
 
 package logger
 
@@ -8,6 +7,6 @@ import (
 	"io"
 )
 
-func newSyslog(prefix string) (io.WriteCloser, error) {
+func newSysLog(prefix string) (io.WriteCloser, error) {
 	return nil, fmt.Errorf("not implemented on windows")
 }

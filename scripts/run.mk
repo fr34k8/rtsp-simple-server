@@ -5,10 +5,11 @@ WORKDIR /s
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . ./
+RUN go generate ./...
 RUN go build -o /out .
 WORKDIR /
 ARG CONFIG_RUN
-RUN echo "$$CONFIG_RUN" > rtsp-simple-server.yml
+RUN echo "$$CONFIG_RUN" > mediamtx.yml
 endef
 export DOCKERFILE_RUN
 
@@ -21,14 +22,14 @@ define CONFIG_RUN
 
 paths:
   all:
-#    runOnReady: ffmpeg -i rtsp://localhost:$$RTSP_PORT/$$RTSP_PATH -c copy -f mpegts myfile_$$RTSP_PATH.ts
+#    runOnReady: ffmpeg -i rtsp://localhost:$$RTSP_PORT/$$MTX_PATH -c copy -f mpegts myfile_$$MTX_PATH.ts
 #    readUser: test
 #    readPass: tast
-#    runOnDemand: ffmpeg -re -stream_loop -1 -i testimages/ffmpeg/emptyvideo.mkv -c copy -f rtsp rtsp://localhost:$$RTSP_PORT/$$RTSP_PATH
+#    runOnDemand: ffmpeg -re -stream_loop -1 -i testimages/ffmpeg/emptyvideo.mkv -c copy -f rtsp rtsp://localhost:$$RTSP_PORT/$$MTX_PATH
 
 #  proxied:
 #    source: rtsp://192.168.2.198:554/stream
-#    sourceProtocol: tcp
+#    rtspTransport: tcp
 #    sourceOnDemand: yes
 #    runOnDemand: ffmpeg -i rtsp://192.168.2.198:554/stream -c copy -f rtsp rtsp://localhost:$$RTSP_PORT/proxied2
 

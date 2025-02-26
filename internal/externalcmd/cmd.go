@@ -2,13 +2,20 @@
 package externalcmd
 
 import (
-	"strings"
+	"errors"
+	"fmt"
+	"os"
 	"time"
 )
 
 const (
 	restartPause = 5 * time.Second
 )
+
+var errTerminated = errors.New("terminated")
+
+// OnExitFunc is the prototype of onExit.
+type OnExitFunc func(error)
 
 // Environment is a Cmd environment.
 type Environment map[string]string
@@ -19,7 +26,7 @@ type Cmd struct {
 	cmdstr  string
 	restart bool
 	env     Environment
-	onExit  func(int)
+	onExit  func(error)
 
 	// in
 	terminate chan struct{}
@@ -31,10 +38,19 @@ func NewCmd(
 	cmdstr string,
 	restart bool,
 	env Environment,
-	onExit func(int),
+	onExit OnExitFunc,
 ) *Cmd {
-	for key, val := range env {
-		cmdstr = strings.ReplaceAll(cmdstr, "$"+key, val)
+	// replace variables in both Linux and Windows, in order to allow using the
+	// same commands on both of them.
+	cmdstr = os.Expand(cmdstr, func(variable string) string {
+		if value, ok := env[variable]; ok {
+			return value
+		}
+		return os.Getenv(variable)
+	})
+
+	if onExit == nil {
+		onExit = func(_ error) {}
 	}
 
 	e := &Cmd{
@@ -61,29 +77,34 @@ func (e *Cmd) Close() {
 func (e *Cmd) run() {
 	defer e.pool.wg.Done()
 
+	env := append([]string(nil), os.Environ()...)
+	for key, val := range e.env {
+		env = append(env, key+"="+val)
+	}
+
 	for {
-		ok := func() bool {
-			c, ok := e.runInner()
-			if !ok {
-				return false
-			}
+		err := e.runOSSpecific(env)
+		if errors.Is(err, errTerminated) {
+			return
+		}
 
-			e.onExit(c)
-
-			if !e.restart {
-				<-e.terminate
-				return false
+		if !e.restart {
+			if err != nil {
+				e.onExit(err)
 			}
+			return
+		}
 
-			select {
-			case <-time.After(restartPause):
-				return true
-			case <-e.terminate:
-				return false
-			}
-		}()
-		if !ok {
-			break
+		if err != nil {
+			e.onExit(err)
+		} else {
+			e.onExit(fmt.Errorf("command exited with code 0"))
+		}
+
+		select {
+		case <-time.After(restartPause):
+		case <-e.terminate:
+			return
 		}
 	}
 }

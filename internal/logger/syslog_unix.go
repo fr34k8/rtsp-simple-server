@@ -1,5 +1,4 @@
 //go:build !windows
-// +build !windows
 
 package logger
 
@@ -12,7 +11,7 @@ type syslog struct {
 	inner *native.Writer
 }
 
-func newSyslog(prefix string) (io.WriteCloser, error) {
+func newSysLog(prefix string) (io.WriteCloser, error) {
 	inner, err := native.New(native.LOG_INFO|native.LOG_DAEMON, prefix)
 	if err != nil {
 		return nil, err
